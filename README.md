@@ -1,16 +1,16 @@
 # workmux
 
+**Git worktrees + tmux windows**
+
 Giga opinionated zero-friction workflow tool that orchestrates git worktrees and
-tmux windows to create isolated development environments, perfect for running
-multiple AI agents in parallel without conflict.
+tmux windows to create isolated development environments.
+
+Perfect for running multiple AI agents in parallel without conflict.
 
 ## Philosophy
 
 - **One worktree, one tmux window**: Each git worktree gets its own dedicated,
   pre-configured tmux window
-- **Parallel AI-powered development**: Safely run multiple AI agents on
-  different features simultaneously. Each agent gets a fully isolated
-  environment, preventing them from interfering with each other
 - **Frictionless**: Multi-step workflows reduced to simple commands
 - **Configuration as code**: Define your tmux layout and setup steps in
   `.workmux.yaml`
@@ -33,14 +33,6 @@ multiple AI agents in parallel without conflict.
 
 ```bash
 cargo install workmux
-```
-
-## Shell Alias (Recommended)
-
-For faster typing, alias `workmux` to `wm`:
-
-```bash
-alias wm='workmux'
 ```
 
 ## Quick start
@@ -105,10 +97,10 @@ files:
   copy:
     - '.env.example'
   # Files/directories to symlink from the repo root into the new worktree.
-  # Useful for sharing heavy directories like node_modules or build caches.
+  # Useful for sharing build caches or other large dependencies.
   symlink:
-    - 'node_modules'
     - '.next'
+    - 'tmp/cache'
 
 # Defines the tmux pane layout for new windows.
 panes:
@@ -118,25 +110,33 @@ panes:
     split: horizontal # Splits the window horizontally, creating a new pane to the right
 ```
 
-### Configuration Options
+### Configuration options
 
-- **main_branch**: Branch to merge into (optional, auto-detected from remote or
+- `main_branch`: Branch to merge into (optional, auto-detected from remote or
   checks for `main`/`master`)
-- **worktree_dir**: Custom directory for worktrees (absolute or relative to repo
+- `worktree_dir`: Custom directory for worktrees (absolute or relative to repo
   root)
-- **window_prefix**: Prefix for tmux window names (default: `wm-`)
-- **panes**: Array of pane configurations
-  - **command**: Command to run in the pane
-  - **focus**: Whether this pane should receive focus (default: false)
-  - **split**: How to split from previous pane (`horizontal` or `vertical`)
-- **post_create**: Commands to run after worktree creation (in the new worktree
+- `window_prefix`: Prefix for tmux window names (default: `wm-`)
+- `panes`: Array of pane configurations
+  - `command`: Command to run in the pane
+  - `focus`: Whether this pane should receive focus (default: false)
+  - `split`: How to split from previous pane (`horizontal` or `vertical`)
+- `post_create`: Commands to run after worktree creation (in the new worktree
   directory)
-- **files**: File operations to perform on worktree creation
-  - **copy**: List of glob patterns for files to copy
-  - **symlink**: List of glob patterns for files/directories to symlink
+- `files`: File operations to perform on worktree creation
+  - `copy`: List of glob patterns for files to copy
+  - `symlink`: List of glob patterns for files/directories to symlink
 
 **Note**: Worktrees are created in `<project>__worktrees` as a sibling directory
 to your project by default.
+
+### Shell alias (recommended)
+
+For faster typing, alias `workmux` to `wm`:
+
+```bash
+alias wm='workmux'
+```
 
 ## Commands
 
@@ -203,12 +203,11 @@ resources (worktree, tmux window, and local branch).
 2. Checks for uncommitted changes (errors if found, unless
    `--ignore-uncommitted` is used)
 3. Commits staged changes if present (unless `--ignore-uncommitted` is used)
-4. Pulls latest changes to main branch
-5. Merges your branch into main
-6. Deletes the tmux window (including the one you're currently in if you ran
+4. Merges your branch into main
+5. Deletes the tmux window (including the one you're currently in if you ran
    this from a worktree)
-7. Removes the worktree
-8. Deletes the local branch
+6. Removes the worktree
+7. Deletes the local branch
 
 **Typical workflow:**
 
@@ -359,7 +358,7 @@ workmux completions zsh
 See the [Shell Completions](#shell-completions) section for installation
 instructions.
 
-## Workflow Example
+## Workflow example
 
 Here's a complete workflow:
 
@@ -382,11 +381,10 @@ workmux list
 
 ## Why workmux?
 
-`workmux` automates over a dozen manual steps into two simple commands, and
-unlocks parallel, AI-driven development workflows that are otherwise
-impractical.
+`workmux` reduces manual setup to a pair of commands and makes it feasible to
+run AI-driven development workflows in parallel.
 
-### Without workmux:
+### Without workmux
 
 ```bash
 # 1. Manually create the worktree and environment
@@ -412,7 +410,7 @@ git worktree remove ../worktrees/user-auth
 git branch -d user-auth
 ```
 
-### With workmux:
+### With workmux
 
 ```bash
 # Create the environment
@@ -424,7 +422,7 @@ workmux add user-auth
 workmux merge
 ```
 
-### The Parallel AI Workflow (with workmux):
+### The parallel AI workflow (with workmux)
 
 Delegate multiple complex tasks to AI agents and let them work at the same time.
 This workflow is cumbersome to manage manually.
@@ -443,7 +441,7 @@ workmux merge refactor/user-model
 workmux merge feature/new-api
 ```
 
-## Shell Completions
+## Shell completions
 
 To enable tab completions for commands and branch names, add the following to
 your shell's configuration file.
@@ -471,3 +469,8 @@ workmux completions fish | source
 - Rust (for building)
 - Git 2.5+ (for worktree support)
 - tmux
+
+## Related projects
+
+- [tmux-bro](https://github.com/raine/tmux-bro)
+- [tmux-file-picker](https://github.com/raine/tmux-file-picker)
