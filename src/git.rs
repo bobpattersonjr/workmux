@@ -116,6 +116,24 @@ pub fn create_worktree(
     }
 
     cmd.run().context("Failed to create worktree")?;
+
+    // When creating a new branch from a remote tracking branch (e.g., origin/main),
+    // git automatically sets up tracking for the new branch. This means the new branch
+    // would track origin/main instead of being independent. Unset this to prevent
+    // inheriting the upstream configuration.
+    if create_branch {
+        unset_branch_upstream(branch_name)?;
+    }
+
+    Ok(())
+}
+
+/// Unset the upstream tracking for a branch
+pub fn unset_branch_upstream(branch_name: &str) -> Result<()> {
+    Cmd::new("git")
+        .args(&["branch", "--unset-upstream", branch_name])
+        .run()
+        .context("Failed to unset branch upstream")?;
     Ok(())
 }
 
