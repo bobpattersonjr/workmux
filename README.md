@@ -130,8 +130,14 @@ panes:
   - `copy`: List of glob patterns for files to copy
   - `symlink`: List of glob patterns for files/directories to symlink
 
-**Note**: Worktrees are created in `<project>__worktrees` as a sibling directory
-to your project by default.
+**Default behavior:**
+
+- Worktrees are created in `<project>__worktrees` as a sibling directory to
+  your project by default
+- If no `panes` configuration is defined, workmux provides sensible defaults:
+  - For projects with a `CLAUDE.md` file: Opens `claude` in the first pane
+  - For all other projects: Opens your default shell (`$SHELL`)
+  - Both configurations include a second pane split horizontally
 
 ### Shell alias (recommended)
 
