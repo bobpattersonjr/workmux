@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::{thread, time::Duration};
 
 use crate::{cmd, config, git, tmux};
 
@@ -539,6 +540,30 @@ pub fn cleanup(
     {
         tmux::kill_window(prefix, branch_name).context("Failed to kill tmux window")?;
         result.tmux_window_killed = true;
+
+        // Poll to confirm the window is gone before proceeding. This prevents a race
+        // condition where we try to delete the directory before the shell inside
+        // the tmux window has terminated.
+        const MAX_RETRIES: u32 = 10;
+        const RETRY_DELAY: Duration = Duration::from_millis(100);
+        let mut window_is_gone = false;
+        for _ in 0..MAX_RETRIES {
+            if !tmux::window_exists(prefix, branch_name)? {
+                window_is_gone = true;
+                break;
+            }
+            thread::sleep(RETRY_DELAY);
+        }
+
+        if !window_is_gone {
+            // The window did not close in time. Proceeding may fail, but we let it
+            // try. With logging, this warning will be critical for diagnosis.
+            eprintln!(
+                "Warning: tmux window for '{}' did not close in the allotted time. \
+                Filesystem cleanup may fail.",
+                branch_name
+            );
+        }
     }
 
     // 2. Forcefully remove the worktree directory from the filesystem.
