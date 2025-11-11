@@ -142,8 +142,11 @@ pub fn build_startup_command(command: Option<&str>) -> Result<Option<String>> {
     // We must escape single quotes within the user command using POSIX-style escaping.
     let escaped_command = command.replace('\'', r#"'\''"#);
 
+    // Use a login shell (-l) to match tmux's default environment. This keeps pane
+    // commands from sourcing interactive-only rc files (like ~/.zshrc) that would
+    // otherwise alter PATH compared to panes without explicit commands.
     let full_command = format!(
-        "{shell} -ic '{escaped_command}; exec {shell}'",
+        "{shell} -lc '{escaped_command}; exec {shell} -l'",
         shell = shell,
         escaped_command = escaped_command
     );
