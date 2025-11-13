@@ -224,6 +224,7 @@ def write_workmux_config(
     post_create: Optional[List[str]] = None,
     files: Optional[Dict[str, List[str]]] = None,
     env: Optional[TmuxEnvironment] = None,
+    window_prefix: Optional[str] = None,
 ):
     """Creates a .workmux.yaml file from structured data and optionally commits it."""
     config: Dict[str, Any] = {"panes": panes if panes is not None else []}
@@ -231,6 +232,8 @@ def write_workmux_config(
         config["post_create"] = post_create
     if files:
         config["files"] = files
+    if window_prefix:
+        config["window_prefix"] = window_prefix
     (repo_path / ".workmux.yaml").write_text(yaml.dump(config))
 
     # If env is provided, commit the config file to avoid uncommitted changes in merge tests
@@ -244,6 +247,31 @@ def write_workmux_config(
             check=True,
             env=env.env,
         )
+
+
+def write_global_workmux_config(
+    env: TmuxEnvironment,
+    panes: Optional[List[Dict[str, Any]]] = None,
+    post_create: Optional[List[str]] = None,
+    files: Optional[Dict[str, List[str]]] = None,
+    window_prefix: Optional[str] = None,
+) -> Path:
+    """Creates the global ~/.config/workmux/config.yaml file within the isolated HOME."""
+    config: Dict[str, Any] = {}
+    if panes is not None:
+        config["panes"] = panes
+    if post_create is not None:
+        config["post_create"] = post_create
+    if files is not None:
+        config["files"] = files
+    if window_prefix is not None:
+        config["window_prefix"] = window_prefix
+
+    config_dir = env.home_path / ".config" / "workmux"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "config.yaml"
+    config_path.write_text(yaml.dump(config))
+    return config_path
 
 
 def get_worktree_path(repo_path: Path, branch_name: str) -> Path:

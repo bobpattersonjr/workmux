@@ -12,6 +12,7 @@ from .conftest import (
     run_workmux_add,
     run_workmux_command,
     write_workmux_config,
+    write_global_workmux_config,
 )
 
 
@@ -159,6 +160,241 @@ alias testcmd='echo "{alias_output}"'
     assert poll_until(check_alias_output, timeout=2.0), (
         f"Alias output '{alias_output}' not found in pane - shell rc file not sourced"
     )
+
+
+def test_project_config_overrides_global_config(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Project-level settings should override conflicting global settings."""
+    env = isolated_tmux_server
+    branch_name = "feature-project-overrides"
+    global_prefix = "global-"
+    project_prefix = "project-"
+
+    write_global_workmux_config(env, window_prefix=global_prefix)
+    write_workmux_config(repo_path, window_prefix=project_prefix)
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    list_windows_result = env.tmux(["list-windows", "-F", "#{window_name}"])
+    existing_windows = list_windows_result.stdout.strip().split("\n")
+    assert f"{project_prefix}{branch_name}" in existing_windows
+    assert f"{global_prefix}{branch_name}" not in existing_windows
+
+
+def test_global_config_used_when_project_config_absent(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Global config should be respected even if the repository lacks .workmux.yaml."""
+    env = isolated_tmux_server
+    branch_name = "feature-global-only"
+    hook_file = "global_only_hook.txt"
+
+    write_global_workmux_config(env, post_create=[f"touch {hook_file}"])
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    expected_worktree_dir = get_worktree_path(repo_path, branch_name)
+    assert (expected_worktree_dir / hook_file).exists()
+
+
+def test_global_placeholder_merges_post_create_commands(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """The '<global>' placeholder should expand to global post_create commands."""
+    env = isolated_tmux_server
+    branch_name = "feature-global-hooks"
+    global_hook = "created_from_global.txt"
+    before_hook = "project_before.txt"
+    after_hook = "project_after.txt"
+
+    write_global_workmux_config(env, post_create=[f"touch {global_hook}"])
+    write_workmux_config(
+        repo_path,
+        post_create=[f"touch {before_hook}", "<global>", f"touch {after_hook}"],
+    )
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_dir = get_worktree_path(repo_path, branch_name)
+    assert (worktree_dir / before_hook).exists()
+    assert (worktree_dir / global_hook).exists()
+    assert (worktree_dir / after_hook).exists()
+
+
+def test_global_placeholder_merges_file_operations(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """The '<global>' placeholder should merge copy and symlink file operations."""
+    env = isolated_tmux_server
+    branch_name = "feature-global-files"
+
+    # Create files/directories that will be copied or symlinked.
+    global_copy = repo_path / "global.env"
+    project_copy = repo_path / "project.env"
+    global_copy.write_text("GLOBAL")
+    project_copy.write_text("PROJECT")
+
+    global_dir = repo_path / "global_cache"
+    project_dir = repo_path / "project_cache"
+    global_dir.mkdir()
+    (global_dir / "shared.txt").write_text("global data")
+    project_dir.mkdir()
+    (project_dir / "local.txt").write_text("project data")
+
+    env.run_command(
+        ["git", "add", "global.env", "project.env", "global_cache", "project_cache"],
+        cwd=repo_path,
+    )
+    env.run_command(
+        ["git", "commit", "-m", "Add files for global placeholder tests"], cwd=repo_path
+    )
+
+    write_global_workmux_config(
+        env,
+        files={"copy": ["global.env"], "symlink": ["global_cache"]},
+    )
+    write_workmux_config(
+        repo_path,
+        files={
+            "copy": ["<global>", "project.env"],
+            "symlink": ["<global>", "project_cache"],
+        },
+    )
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_dir = get_worktree_path(repo_path, branch_name)
+    copied_global = worktree_dir / "global.env"
+    copied_project = worktree_dir / "project.env"
+    assert copied_global.exists()
+    assert copied_global.read_text() == "GLOBAL"
+    assert not copied_global.is_symlink()
+    assert copied_project.exists()
+    assert copied_project.read_text() == "PROJECT"
+    assert not copied_project.is_symlink()
+
+    symlinked_global = worktree_dir / "global_cache"
+    symlinked_project = worktree_dir / "project_cache"
+    assert symlinked_global.is_symlink()
+    assert (symlinked_global / "shared.txt").read_text() == "global data"
+    assert symlinked_project.is_symlink()
+    assert (symlinked_project / "local.txt").read_text() == "project data"
+
+
+def test_global_placeholder_only_merges_specific_file_lists(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """`<global>` can merge copy patterns while symlink patterns fully override."""
+    env = isolated_tmux_server
+    branch_name = "feature-partial-file-merge"
+
+    ignored_files = [
+        "global_copy.txt",
+        "project_copy.txt",
+        "global_symlink_dir/",
+        "project_symlink_dir/",
+    ]
+    with (repo_path / ".gitignore").open("a") as gitignore:
+        for entry in ignored_files:
+            gitignore.write(f"{entry}\n")
+
+    (repo_path / "global_copy.txt").write_text("global copy")
+    (repo_path / "project_copy.txt").write_text("project copy")
+    global_symlink_dir = repo_path / "global_symlink_dir"
+    global_symlink_dir.mkdir()
+    (global_symlink_dir / "global.txt").write_text("global data")
+    project_symlink_dir = repo_path / "project_symlink_dir"
+    project_symlink_dir.mkdir()
+    (project_symlink_dir / "project.txt").write_text("project data")
+
+    write_global_workmux_config(
+        env,
+        files={"copy": ["global_copy.txt"], "symlink": ["global_symlink_dir"]},
+    )
+    write_workmux_config(
+        repo_path,
+        files={
+            "copy": ["<global>", "project_copy.txt"],
+            "symlink": ["project_symlink_dir"],
+        },
+    )
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_dir = get_worktree_path(repo_path, branch_name)
+    assert (worktree_dir / "global_copy.txt").exists()
+    assert (worktree_dir / "project_copy.txt").exists()
+
+    assert (worktree_dir / "project_symlink_dir").is_symlink()
+    assert not (worktree_dir / "global_symlink_dir").exists()
+
+
+def test_project_empty_file_lists_override_global_lists(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Explicit empty lists suppress the corresponding global file operations."""
+    env = isolated_tmux_server
+    branch_name = "feature-empty-file-override"
+
+    ignored_files = [
+        "global_only.env",
+        "global_shared_dir/",
+    ]
+    with (repo_path / ".gitignore").open("a") as gitignore:
+        for entry in ignored_files:
+            gitignore.write(f"{entry}\n")
+
+    (repo_path / "global_only.env").write_text("SECRET=1")
+    global_shared_dir = repo_path / "global_shared_dir"
+    global_shared_dir.mkdir()
+    (global_shared_dir / "package.json").write_text('{"name":"demo"}')
+
+    write_global_workmux_config(
+        env,
+        files={"copy": ["global_only.env"], "symlink": ["global_shared_dir"]},
+    )
+    write_workmux_config(
+        repo_path,
+        files={"copy": [], "symlink": []},
+    )
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_dir = get_worktree_path(repo_path, branch_name)
+    assert not (worktree_dir / "global_only.env").exists()
+    assert not (worktree_dir / "global_shared_dir").exists()
+
+
+def test_project_panes_replace_global_panes(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Project panes should completely replace global panes (no merging)."""
+    env = isolated_tmux_server
+    branch_name = "feature-pane-override"
+    window_name = get_window_name(branch_name)
+    global_output = "GLOBAL_PANE_OUTPUT"
+    project_output = "PROJECT_PANE_OUTPUT"
+
+    write_global_workmux_config(
+        env, panes=[{"command": f"echo '{global_output}'; sleep 0.5"}]
+    )
+    write_workmux_config(
+        repo_path, panes=[{"command": f"echo '{project_output}'; sleep 0.5"}]
+    )
+
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    def check_project_output():
+        capture_result = env.tmux(["capture-pane", "-p", "-t", window_name])
+        return project_output in capture_result.stdout
+
+    assert poll_until(check_project_output, timeout=2.0), (
+        f"Expected project pane output '{project_output}' not found"
+    )
+
+    capture_result = env.tmux(["capture-pane", "-p", "-t", window_name])
+    assert global_output not in capture_result.stdout
 
 
 def test_add_from_specific_branch(
