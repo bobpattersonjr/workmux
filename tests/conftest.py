@@ -47,11 +47,14 @@ class TmuxEnvironment:
         # Prevent tmux from loading the user's real ~/.tmux.conf file
         self.env["TMUX_CONF"] = "/dev/null"
 
-    def run_command(self, cmd: list[str], check: bool = True):
+    def run_command(
+        self, cmd: list[str], check: bool = True, cwd: Optional[Path] = None
+    ):
         """Runs a generic command within the isolated environment."""
+        working_dir = cwd if cwd is not None else self.tmp_path
         return subprocess.run(
             cmd,
-            cwd=self.tmp_path,
+            cwd=working_dir,
             env=self.env,
             capture_output=True,
             text=True,
