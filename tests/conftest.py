@@ -273,10 +273,11 @@ def run_workmux_remove(
     env: TmuxEnvironment,
     workmux_exe_path: Path,
     repo_path: Path,
-    branch_name: str,
+    branch_name: Optional[str] = None,
     force: bool = False,
     user_input: Optional[str] = None,
     expect_fail: bool = False,
+    from_window: Optional[str] = None,
 ) -> None:
     """
     Helper to run `workmux remove` command inside the isolated tmux session.
@@ -288,10 +289,11 @@ def run_workmux_remove(
         env: The isolated tmux environment
         workmux_exe_path: Path to the workmux executable
         repo_path: Path to the git repository
-        branch_name: Name of the branch/worktree to remove
+        branch_name: Optional name of the branch/worktree to remove (omit to auto-detect from current branch)
         force: Whether to use -f flag to skip confirmation
         user_input: Optional string to pipe to stdin (e.g., 'y' for confirmation)
         expect_fail: If True, asserts the command fails (non-zero exit code)
+        from_window: Optional tmux window name to run the command from (useful for testing remove from within worktree window)
     """
     stdout_file = env.tmp_path / "workmux_remove_stdout.txt"
     stderr_file = env.tmp_path / "workmux_remove_stderr.txt"
@@ -303,14 +305,27 @@ def run_workmux_remove(
             f.unlink()
 
     force_flag = "-f " if force else ""
+    branch_arg = branch_name if branch_name else ""
     input_cmd = f"echo '{user_input}' | " if user_input else ""
-    remove_script = (
-        f"cd {repo_path} && "
-        f"{input_cmd}"
-        f"{workmux_exe_path} remove {force_flag}{branch_name} "
-        f"> {stdout_file} 2> {stderr_file}; "
-        f"echo $? > {exit_code_file}"
-    )
+
+    # If from_window is specified, we need to change to that window's working directory
+    if from_window:
+        worktree_path = get_worktree_path(repo_path, from_window.replace("wm-", ""))
+        remove_script = (
+            f"cd {worktree_path} && "
+            f"{input_cmd}"
+            f"{workmux_exe_path} remove {force_flag}{branch_arg} "
+            f"> {stdout_file} 2> {stderr_file}; "
+            f"echo $? > {exit_code_file}"
+        )
+    else:
+        remove_script = (
+            f"cd {repo_path} && "
+            f"{input_cmd}"
+            f"{workmux_exe_path} remove {force_flag}{branch_arg} "
+            f"> {stdout_file} 2> {stderr_file}; "
+            f"echo $? > {exit_code_file}"
+        )
 
     env.tmux(["run-shell", "-b", remove_script])
 

@@ -146,3 +146,66 @@ def test_remove_with_force_on_uncommitted_changes(
     run_workmux_remove(env, workmux_exe_path, repo_path, branch_name, force=True)
 
     assert not worktree_path.exists(), "Worktree should be removed"
+
+
+def test_remove_from_within_worktree_window_without_branch_arg(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Verifies `workmux remove` without branch arg works from within worktree window."""
+    env = isolated_tmux_server
+    branch_name = "remove-from-within"
+    window_name = get_window_name(branch_name)
+    write_workmux_config(repo_path)
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    create_commit(env, worktree_path, "feat: work to remove")
+
+    # Run remove from within the worktree window without specifying branch name
+    # Should auto-detect the current branch and remove it after confirmation
+    run_workmux_remove(
+        env,
+        workmux_exe_path,
+        repo_path,
+        branch_name=None,  # Don't specify branch - should auto-detect
+        force=False,
+        user_input="y",
+        from_window=window_name,
+    )
+
+    assert not worktree_path.exists(), "Worktree should be removed"
+    list_windows_result = env.tmux(["list-windows", "-F", "#{window_name}"])
+    assert window_name not in list_windows_result.stdout, "Window should be closed"
+    branch_list_result = env.run_command(["git", "branch", "--list", branch_name])
+    assert branch_name not in branch_list_result.stdout, "Branch should be removed"
+
+
+def test_remove_force_from_within_worktree_window_without_branch_arg(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """Verifies `workmux remove -f` without branch arg works from within worktree window."""
+    env = isolated_tmux_server
+    branch_name = "force-remove-from-within"
+    window_name = get_window_name(branch_name)
+    write_workmux_config(repo_path)
+    run_workmux_add(env, workmux_exe_path, repo_path, branch_name)
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    create_commit(env, worktree_path, "feat: unmerged work")
+
+    # Run remove -f from within the worktree window without specifying branch name
+    # Should auto-detect the current branch and remove it without confirmation
+    run_workmux_remove(
+        env,
+        workmux_exe_path,
+        repo_path,
+        branch_name=None,  # Don't specify branch - should auto-detect
+        force=True,
+        from_window=window_name,
+    )
+
+    assert not worktree_path.exists(), "Worktree should be removed"
+    list_windows_result = env.tmux(["list-windows", "-F", "#{window_name}"])
+    assert window_name not in list_windows_result.stdout, "Window should be closed"
+    branch_list_result = env.run_command(["git", "branch", "--list", branch_name])
+    assert branch_name not in branch_list_result.stdout, "Branch should be removed"
