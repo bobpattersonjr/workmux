@@ -1,3 +1,4 @@
+use crate::workflow::SetupOptions;
 use crate::{claude, config, git, workflow};
 use anyhow::{Context, Result, anyhow};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -132,6 +133,18 @@ enum Commands {
         /// Open $EDITOR to write the prompt
         #[arg(short = 'e', long = "prompt-editor", conflicts_with_all = ["prompt", "prompt_file"])]
         prompt_editor: bool,
+
+        /// Skip running post-create hooks
+        #[arg(short = 'H', long)]
+        no_hooks: bool,
+
+        /// Skip file copy/symlink operations
+        #[arg(short = 'F', long)]
+        no_file_ops: bool,
+
+        /// Skip executing pane commands (panes open with plain shells)
+        #[arg(short = 'C', long)]
+        no_pane_cmds: bool,
     },
 
     /// Open a tmux window for an existing worktree
@@ -215,7 +228,13 @@ pub fn run() -> Result<()> {
             prompt,
             prompt_file,
             prompt_editor,
+            no_hooks,
+            no_file_ops,
+            no_pane_cmds,
         } => {
+            // Construct setup options from flags
+            let options = SetupOptions::new(!no_hooks, !no_file_ops, !no_pane_cmds);
+
             // Check if branch_name is a remote ref (e.g., origin/feature/foo)
             let remotes = git::list_remotes().context("Failed to list git remotes")?;
             let detected_remote = remotes
@@ -259,7 +278,13 @@ pub fn run() -> Result<()> {
 
                 // Create worktree with local branch name derived from remote ref
                 // Pass the full remote ref as the remote_branch parameter
-                create_worktree(&spec.branch, None, Some(&branch_name), prompt_data.as_ref())
+                create_worktree(
+                    &spec.branch,
+                    None,
+                    Some(&branch_name),
+                    prompt_data.as_ref(),
+                    options,
+                )
             } else {
                 // Regular local branch
                 let resolved_base = if from_current {
@@ -275,6 +300,7 @@ pub fn run() -> Result<()> {
                     resolved_base.as_deref(),
                     None,
                     prompt_data.as_ref(),
+                    options,
                 )
             }
         }
@@ -282,7 +308,11 @@ pub fn run() -> Result<()> {
             branch_name,
             run_hooks,
             force_files,
-        } => open_worktree(&branch_name, run_hooks, force_files),
+        } => {
+            // Construct setup options (pane commands always run on open)
+            let options = SetupOptions::new(run_hooks, force_files, true);
+            open_worktree(&branch_name, options)
+        }
         Commands::Merge {
             branch_name,
             ignore_uncommitted,
@@ -321,16 +351,24 @@ fn create_worktree(
     base_branch: Option<&str>,
     remote_branch: Option<&str>,
     prompt: Option<&Prompt>,
+    options: SetupOptions,
 ) -> Result<()> {
     let config = config::Config::load()?;
 
     // Print setup status if there are post-create hooks
-    if config.post_create.as_ref().is_some_and(|v| !v.is_empty()) {
+    if options.run_hooks && config.post_create.as_ref().is_some_and(|v| !v.is_empty()) {
         println!("Running setup commands...");
     }
 
-    let result = workflow::create(branch_name, base_branch, remote_branch, prompt, &config)
-        .context("Failed to create worktree environment")?;
+    let result = workflow::create(
+        branch_name,
+        base_branch,
+        remote_branch,
+        prompt,
+        &config,
+        options,
+    )
+    .context("Failed to create worktree environment")?;
 
     if result.post_create_hooks_run > 0 {
         println!("✓ Setup complete");
@@ -348,14 +386,14 @@ fn create_worktree(
     Ok(())
 }
 
-fn open_worktree(branch_name: &str, run_hooks: bool, force_files: bool) -> Result<()> {
+fn open_worktree(branch_name: &str, options: SetupOptions) -> Result<()> {
     let config = config::Config::load()?;
 
-    if run_hooks && config.post_create.as_ref().is_some_and(|v| !v.is_empty()) {
+    if options.run_hooks && config.post_create.as_ref().is_some_and(|v| !v.is_empty()) {
         println!("Running setup commands...");
     }
 
-    let result = workflow::open(branch_name, run_hooks, force_files, &config)
+    let result = workflow::open(branch_name, &config, options)
         .context("Failed to open worktree environment")?;
 
     if result.post_create_hooks_run > 0 {

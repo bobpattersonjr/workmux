@@ -224,6 +224,27 @@ def test_add_without_prompt_skips_prompt_file(
     assert not prompt_file.exists()
 
 
+def test_add_can_skip_post_create_hooks(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """`workmux add --no-hooks` should not run configured post_create hooks."""
+    env = isolated_tmux_server
+    branch_name = "feature-skip-hooks"
+    hook_file = "hook_should_not_exist.txt"
+
+    write_workmux_config(repo_path, post_create=[f"touch {hook_file}"])
+
+    run_workmux_command(
+        env,
+        workmux_exe_path,
+        repo_path,
+        f"add {branch_name} --no-hooks",
+    )
+
+    expected_worktree_dir = get_worktree_path(repo_path, branch_name)
+    assert not (expected_worktree_dir / hook_file).exists()
+
+
 def test_add_executes_pane_commands(
     isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
 ):
@@ -249,6 +270,27 @@ def test_add_executes_pane_commands(
     )
 
 
+def test_add_can_skip_pane_commands(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """`workmux add --no-pane-cmds` should create panes without running commands."""
+    env = isolated_tmux_server
+    branch_name = "feature-skip-pane-cmds"
+    marker_file = "pane_command_output.txt"
+
+    write_workmux_config(repo_path, panes=[{"command": f"touch {marker_file}"}])
+
+    run_workmux_command(
+        env,
+        workmux_exe_path,
+        repo_path,
+        f"add {branch_name} --no-pane-cmds",
+    )
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    assert not (worktree_path / marker_file).exists()
+
+
 def test_add_copies_directories(
     isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
 ):
@@ -272,6 +314,29 @@ def test_add_copies_directories(
     assert copied_dir.is_dir()
     assert (copied_dir / "root.txt").read_text() == "root-level"
     assert (copied_dir / "nested" / "child.txt").read_text() == "nested-level"
+
+
+def test_add_can_skip_file_operations(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """`workmux add --no-file-ops` should not perform configured copy/symlink actions."""
+    env = isolated_tmux_server
+    branch_name = "feature-skip-file-ops"
+    shared_dir = repo_path / "skip-shared"
+    shared_dir.mkdir()
+    (shared_dir / "data.txt").write_text("copy-me")
+
+    write_workmux_config(repo_path, files={"copy": ["skip-shared"]})
+
+    run_workmux_command(
+        env,
+        workmux_exe_path,
+        repo_path,
+        f"add {branch_name} --no-file-ops",
+    )
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    assert not (worktree_path / "skip-shared").exists()
 
 
 def test_add_sources_shell_rc_files(

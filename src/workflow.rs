@@ -42,10 +42,51 @@ pub struct CleanupResult {
 }
 
 /// Options for setting up a worktree environment
-struct SetupOptions {
-    run_hooks: bool,
-    force_files: bool,
-    prompt_file_path: Option<PathBuf>,
+#[derive(Debug, Clone)]
+pub struct SetupOptions {
+    pub run_hooks: bool,
+    pub run_file_ops: bool,
+    pub run_pane_commands: bool,
+    pub prompt_file_path: Option<PathBuf>,
+}
+
+impl SetupOptions {
+    /// Create SetupOptions with all options enabled
+    #[allow(dead_code)]
+    pub fn all() -> Self {
+        Self {
+            run_hooks: true,
+            run_file_ops: true,
+            run_pane_commands: true,
+            prompt_file_path: None,
+        }
+    }
+
+    /// Create SetupOptions with custom values
+    pub fn new(run_hooks: bool, run_file_ops: bool, run_pane_commands: bool) -> Self {
+        Self {
+            run_hooks,
+            run_file_ops,
+            run_pane_commands,
+            prompt_file_path: None,
+        }
+    }
+
+    /// Create SetupOptions with a prompt file
+    #[allow(dead_code)]
+    pub fn with_prompt(
+        run_hooks: bool,
+        run_file_ops: bool,
+        run_pane_commands: bool,
+        prompt_file_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            run_hooks,
+            run_file_ops,
+            run_pane_commands,
+            prompt_file_path,
+        }
+    }
 }
 
 /// Create a new worktree with tmux window and panes
@@ -55,6 +96,7 @@ pub fn create(
     remote_branch: Option<&str>,
     prompt: Option<&cli::Prompt>,
     config: &config::Config,
+    options: SetupOptions,
 ) -> Result<CreateResult> {
     info!(
         branch = branch_name,
@@ -200,12 +242,12 @@ pub fn create(
         None
     };
 
-    let options = SetupOptions {
-        run_hooks: true,
-        force_files: true,
+    // Merge prompt file path into options
+    let options_with_prompt = SetupOptions {
         prompt_file_path,
+        ..options
     };
-    let mut result = setup_environment(branch_name, &worktree_path, config, &options)?;
+    let mut result = setup_environment(branch_name, &worktree_path, config, &options_with_prompt)?;
     result.base_branch = base_branch_for_creation.clone();
     info!(
         branch = branch_name,
@@ -219,11 +261,15 @@ pub fn create(
 /// Open a tmux window for an existing worktree
 pub fn open(
     branch_name: &str,
-    run_hooks: bool,
-    force_files: bool,
     config: &config::Config,
+    options: SetupOptions,
 ) -> Result<CreateResult> {
-    info!(branch = branch_name, run_hooks, force_files, "open:start");
+    info!(
+        branch = branch_name,
+        run_hooks = options.run_hooks,
+        run_file_ops = options.run_file_ops,
+        "open:start"
+    );
 
     // Validate pane config before any other operations
     if let Some(panes) = &config.panes {
@@ -259,11 +305,6 @@ pub fn open(
     })?;
 
     // Setup the environment
-    let options = SetupOptions {
-        run_hooks,
-        force_files,
-        prompt_file_path: None,
-    };
     let result = setup_environment(branch_name, &worktree_path, config, &options)?;
     info!(
         branch = branch_name,
@@ -286,14 +327,14 @@ fn setup_environment(
         branch = branch_name,
         path = %worktree_path.display(),
         run_hooks = options.run_hooks,
-        force_files = options.force_files,
+        run_file_ops = options.run_file_ops,
         "setup_environment:start"
     );
     let prefix = config.window_prefix();
     let repo_root = git::get_repo_root()?;
 
-    // Perform file operations (copy and symlink) if forced
-    if options.force_files {
+    // Perform file operations (copy and symlink) if requested
+    if options.run_file_ops {
         handle_file_operations(&repo_root, worktree_path, &config.files)
             .context("Failed to perform file operations")?;
         debug!(
@@ -338,6 +379,7 @@ fn setup_environment(
         branch_name,
         panes,
         worktree_path,
+        options.run_pane_commands,
         options.prompt_file_path.as_deref(),
     )
     .context("Failed to setup panes")?;

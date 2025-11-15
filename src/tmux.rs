@@ -259,6 +259,7 @@ pub fn setup_panes(
     window_name: &str,
     panes: &[PaneConfig],
     working_dir: &Path,
+    run_commands: bool,
     prompt_file_path: Option<&Path>,
 ) -> Result<PaneSetupResult> {
     if panes.is_empty() {
@@ -271,10 +272,15 @@ pub fn setup_panes(
 
     // Handle the first pane (index 0), which already exists from window creation
     if let Some(pane_config) = panes.first() {
-        let adjusted_command = pane_config
-            .command
-            .as_deref()
-            .map(|cmd| adjust_command(cmd, prompt_file_path, working_dir));
+        let adjusted_command = if run_commands {
+            pane_config
+                .command
+                .as_deref()
+                .map(|cmd| adjust_command(cmd, prompt_file_path, working_dir))
+        } else {
+            None
+        };
+
         if let Some(cmd_str) = adjusted_command.as_ref().map(|c| c.as_ref())
             && let Some(startup_cmd) = build_startup_command(Some(cmd_str))?
         {
@@ -293,10 +299,14 @@ pub fn setup_panes(
             // Determine which pane to split
             let target_pane_to_split = pane_config.target.unwrap_or(actual_pane_count - 1);
 
-            let adjusted_command = pane_config
-                .command
-                .as_deref()
-                .map(|cmd| adjust_command(cmd, prompt_file_path, working_dir));
+            let adjusted_command = if run_commands {
+                pane_config
+                    .command
+                    .as_deref()
+                    .map(|cmd| adjust_command(cmd, prompt_file_path, working_dir))
+            } else {
+                None
+            };
             let startup_cmd = build_startup_command(adjusted_command.as_ref().map(|c| c.as_ref()))?;
 
             split_pane_with_command(

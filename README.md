@@ -239,14 +239,23 @@ immediately. If the branch doesn't exist, it will be created automatically.
 
 Note: The prompt options are mutually exclusive - you can only use one at a time.
 
+**Skip options:**
+
+These options allow you to skip expensive setup steps when they're not needed (e.g., for
+documentation-only changes):
+
+- `-H, --no-hooks`: Skip running `post_create` commands
+- `-F, --no-file-ops`: Skip file copy/symlink operations (e.g., skip linking `node_modules`)
+- `-C, --no-pane-cmds`: Skip executing pane commands (panes open with plain shells instead)
+
 #### What happens
 
 1. Creates a git worktree at
    `<project_root>/../<project_name>__worktrees/<branch-name>`
-2. Creates a new tmux window named after the branch
-3. Runs any configured file operations (copy/symlink)
-4. Executes `post_create` commands if defined (runs before the tmux window opens, so keep
+2. Runs any configured file operations (copy/symlink)
+3. Executes `post_create` commands if defined (runs before the tmux window opens, so keep
    them fast)
+4. Creates a new tmux window named after the branch
 5. Sets up your configured tmux pane layout
 6. Automatically switches your tmux client to the new window
 
@@ -279,6 +288,12 @@ workmux add feature/refactor --prompt-file task-description.md
 
 # Open your editor to write a prompt interactively
 workmux add feature/new-api --prompt-editor
+
+# Skip expensive setup for documentation-only changes
+workmux add docs-update --no-hooks --no-file-ops --no-pane-cmds
+
+# Skip just the file operations (e.g., you don't need node_modules)
+workmux add quick-fix --no-file-ops
 ```
 
 #### AI agent integration
