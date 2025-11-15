@@ -126,7 +126,7 @@ enum Commands {
         prompt: Option<String>,
 
         /// Path to a file whose contents should be used as the prompt
-        #[arg(long = "prompt-file", conflicts_with = "prompt")]
+        #[arg(short = 'P', long = "prompt-file", conflicts_with = "prompt")]
         prompt_file: Option<PathBuf>,
     },
 

@@ -233,7 +233,7 @@ immediately. If the branch doesn't exist, it will be created automatically.
 - `-p, --prompt <text>`: Provide an inline prompt that will be written to `PROMPT.md` in
   the new worktree and automatically passed to AI agent panes (mutually exclusive
   with `--prompt-file`).
-- `--prompt-file <path>`: Provide a path to a file whose contents will be used as the
+- `-P, --prompt-file <path>`: Provide a path to a file whose contents will be used as the
   prompt (mutually exclusive with `--prompt`).
 
 **What happens:**
