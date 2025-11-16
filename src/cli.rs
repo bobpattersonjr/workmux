@@ -147,7 +147,7 @@ enum Commands {
         no_pane_cmds: bool,
 
         /// The agent to use for this worktree (e.g., claude, gemini)
-        #[arg(long)]
+        #[arg(short = 'a', long)]
         agent: Option<String>,
     },
 

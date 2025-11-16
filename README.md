@@ -241,7 +241,7 @@ immediately. If the branch doesn't exist, it will be created automatically.
 - `-P, --prompt-file <path>`: Provide a path to a file whose contents will be used as the
   prompt.
 - `-e, --prompt-editor`: Open your `$EDITOR` (or `$VISUAL`) to write the prompt interactively.
-- `--agent <name>`: Override the default agent for this worktree (e.g., `gemini`).
+- `-a, --agent <name>`: Override the default agent for this worktree (e.g., `gemini`).
 
 Note: The prompt options are mutually exclusive - you can only use one at a time.
 
@@ -290,7 +290,7 @@ workmux add origin/feature/foo
 workmux add feature/ai --prompt "Implement user authentication with OAuth"
 
 # Override the default agent for a specific worktree
-workmux add feature/testing --agent gemini
+workmux add feature/testing -a gemini
 
 # Create a worktree with a prompt from a file
 workmux add feature/refactor --prompt-file task-description.md
