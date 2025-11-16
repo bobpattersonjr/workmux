@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::git;
+use crate::{cmd, git};
+use which::{which, which_in};
 
 /// Default script for cleaning up node_modules directories before worktree deletion.
 /// This script moves node_modules to a temporary location and deletes them in the background,
@@ -73,6 +75,10 @@ pub struct Config {
     #[serde(default)]
     pub pre_delete: Option<Vec<String>>,
 
+    /// The agent command to use (e.g., "claude", "gemini")
+    #[serde(default)]
+    pub agent: Option<String>,
+
     /// File operations to perform after creating the worktree
     #[serde(default)]
     pub files: FileConfig,
@@ -139,11 +145,20 @@ pub fn validate_panes_config(panes: &[PaneConfig]) -> anyhow::Result<()> {
 
 impl Config {
     /// Load and merge global and project configurations.
-    pub fn load() -> anyhow::Result<Self> {
+    pub fn load(cli_agent: Option<&str>) -> anyhow::Result<Self> {
         let global_config = Self::load_global()?.unwrap_or_default();
         let project_config = Self::load_project()?.unwrap_or_default();
 
+        let final_agent = cli_agent
+            .map(|s| s.to_string())
+            .or_else(|| project_config.agent.clone())
+            .or_else(|| global_config.agent.clone())
+            .unwrap_or_else(|| "claude".to_string());
+
+        let resolved_agent = resolve_agent_command(&final_agent);
+
         let mut config = global_config.merge(project_config);
+        config.agent = Some(resolved_agent);
 
         // After merging, apply sensible defaults for any values that are not configured.
         let needs_defaults = config.panes.is_none() || config.pre_delete.is_none();
@@ -259,6 +274,7 @@ impl Config {
             main_branch: project.main_branch.or(self.main_branch),
             worktree_dir: project.worktree_dir.or(self.worktree_dir),
             window_prefix: project.window_prefix.or(self.window_prefix),
+            agent: project.agent.or(self.agent),
 
             // Panes: project replaces global (no placeholder support)
             panes: project.panes.or(self.panes),
@@ -297,7 +313,7 @@ impl Config {
     fn claude_default_panes() -> Vec<PaneConfig> {
         vec![
             PaneConfig {
-                command: Some("claude".to_string()),
+                command: Some("<agent>".to_string()),
                 focus: true,
                 split: None,
                 target: None,
@@ -342,6 +358,9 @@ impl Config {
 
 # Custom prefix for tmux window names.
 # window_prefix: wm-
+
+# The agent command to use when <agent> is specified in pane commands.
+# agent: claude
 
 # Commands to run in the new worktree before the tmux window is opened.
 # These hooks block window creation, so reserve them for short tasks.
@@ -398,4 +417,76 @@ files:
 
         Ok(())
     }
+}
+
+fn resolve_agent_command(agent: &str) -> String {
+    let Some((executable, rest)) = split_first_token(agent) else {
+        return agent.to_string();
+    };
+
+    let trimmed_rest = rest.trim_start();
+    let resolved_executable =
+        resolve_executable_path(executable).unwrap_or_else(|| executable.to_string());
+
+    if trimmed_rest.is_empty() {
+        resolved_executable
+    } else {
+        format!("{} {}", resolved_executable, trimmed_rest)
+    }
+}
+
+/// Resolves an executable name or path to its full absolute path.
+///
+/// For absolute paths, returns as-is. For relative paths, resolves against current directory.
+/// For plain executable names (e.g., "claude"), searches first in tmux's global PATH
+/// (since panes will run in tmux's environment), then falls back to the current shell's PATH.
+/// Returns None if the executable cannot be found.
+fn resolve_executable_path(executable: &str) -> Option<String> {
+    let exec_path = Path::new(executable);
+
+    if exec_path.is_absolute() {
+        return Some(exec_path.to_string_lossy().into_owned());
+    }
+
+    if executable.contains(std::path::MAIN_SEPARATOR)
+        || executable.contains('/')
+        || executable.contains('\\')
+    {
+        if let Ok(current_dir) = env::current_dir() {
+            return Some(current_dir.join(exec_path).to_string_lossy().into_owned());
+        }
+    } else {
+        if let Some(tmux_path) = tmux_global_path() {
+            let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            if let Ok(found) = which_in(executable, Some(tmux_path.as_str()), &cwd) {
+                return Some(found.to_string_lossy().into_owned());
+            }
+        }
+
+        if let Ok(found) = which(executable) {
+            return Some(found.to_string_lossy().into_owned());
+        }
+    }
+
+    None
+}
+
+fn tmux_global_path() -> Option<String> {
+    let output = cmd::Cmd::new("tmux")
+        .args(&["show-environment", "-g", "PATH"])
+        .run_and_capture_stdout()
+        .ok()?;
+    output.strip_prefix("PATH=").map(|s| s.to_string())
+}
+
+fn split_first_token(command: &str) -> Option<(&str, &str)> {
+    let trimmed = command.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(
+        trimmed
+            .split_once(char::is_whitespace)
+            .unwrap_or((trimmed, "")),
+    )
 }

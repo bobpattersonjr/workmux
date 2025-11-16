@@ -145,6 +145,10 @@ enum Commands {
         /// Skip executing pane commands (panes open with plain shells)
         #[arg(short = 'C', long)]
         no_pane_cmds: bool,
+
+        /// The agent to use for this worktree (e.g., claude, gemini)
+        #[arg(long)]
+        agent: Option<String>,
     },
 
     /// Open a tmux window for an existing worktree
@@ -231,6 +235,7 @@ pub fn run() -> Result<()> {
             no_hooks,
             no_file_ops,
             no_pane_cmds,
+            agent,
         } => {
             // Construct setup options from flags
             let options = SetupOptions::new(!no_hooks, !no_file_ops, !no_pane_cmds);
@@ -284,6 +289,7 @@ pub fn run() -> Result<()> {
                     Some(&branch_name),
                     prompt_data.as_ref(),
                     options,
+                    agent.as_deref(),
                 )
             } else {
                 // Regular local branch
@@ -301,6 +307,7 @@ pub fn run() -> Result<()> {
                     None,
                     prompt_data.as_ref(),
                     options,
+                    agent.as_deref(),
                 )
             }
         }
@@ -352,8 +359,9 @@ fn create_worktree(
     remote_branch: Option<&str>,
     prompt: Option<&Prompt>,
     options: SetupOptions,
+    agent: Option<&str>,
 ) -> Result<()> {
-    let config = config::Config::load()?;
+    let config = config::Config::load(agent)?;
 
     // Print setup status if there are post-create hooks
     if options.run_hooks && config.post_create.as_ref().is_some_and(|v| !v.is_empty()) {
@@ -387,7 +395,7 @@ fn create_worktree(
 }
 
 fn open_worktree(branch_name: &str, options: SetupOptions) -> Result<()> {
-    let config = config::Config::load()?;
+    let config = config::Config::load(None)?;
 
     if options.run_hooks && config.post_create.as_ref().is_some_and(|v| !v.is_empty()) {
         println!("Running setup commands...");
@@ -416,7 +424,7 @@ fn merge_worktree(
     rebase: bool,
     squash: bool,
 ) -> Result<()> {
-    let config = config::Config::load()?;
+    let config = config::Config::load(None)?;
 
     // Determine the branch to merge (must be done BEFORE changing CWD if running without branch name)
     let branch_to_merge = if let Some(name) = branch_name {
@@ -554,7 +562,7 @@ fn remove_worktree(
         }
     }
 
-    let config = config::Config::load()?;
+    let config = config::Config::load(None)?;
 
     // Print status if there are pre-delete hooks
     if config.pre_delete.as_ref().is_some_and(|v| !v.is_empty()) {
@@ -586,7 +594,7 @@ fn remove_worktree(
 }
 
 fn list_worktrees() -> Result<()> {
-    let config = config::Config::load()?;
+    let config = config::Config::load(None)?;
     let worktrees = workflow::list(&config)?;
 
     if worktrees.is_empty() {

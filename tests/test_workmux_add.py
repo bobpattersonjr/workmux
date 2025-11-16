@@ -162,7 +162,9 @@ printf '%s' "$2" > "{output_filename}"
     )
 
     # Use absolute path to ensure we use the fake gemini
-    write_workmux_config(repo_path, panes=[{"command": str(fake_gemini_path)}])
+    write_workmux_config(
+        repo_path, agent="gemini", panes=[{"command": str(fake_gemini_path)}]
+    )
 
     run_workmux_command(
         env,
@@ -186,6 +188,97 @@ printf '%s' "$2" > "{output_filename}"
         "Prompt content was not passed to gemini"
     )
     assert agent_output.read_text() == prompt_source.read_text()
+
+
+def test_add_uses_agent_from_config(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """The <agent> placeholder should use the agent configured in .workmux.yaml when --agent is not passed."""
+    env = isolated_tmux_server
+    branch_name = "feature-config-agent"
+    prompt_text = "Using configured agent"
+    output_filename = "agent_output.txt"
+
+    # Install fake gemini agent
+    install_fake_agent(
+        env,
+        "gemini",
+        f"""#!/bin/sh
+set -e
+# Gemini gets a -i flag
+printf '%s' "$2" > "{output_filename}"
+""",
+    )
+
+    # Configure .workmux.yaml to use gemini with <agent> placeholder
+    write_workmux_config(repo_path, agent="gemini", panes=[{"command": "<agent>"}])
+
+    # Run 'add' WITHOUT --agent flag, should use gemini from config
+    run_workmux_command(
+        env,
+        workmux_exe_path,
+        repo_path,
+        f"add {branch_name} --prompt '{prompt_text}'",
+    )
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    agent_output = worktree_path / output_filename
+
+    def agent_ran():
+        return agent_output.exists()
+
+    assert poll_until(agent_ran, timeout=2.0), "Configured agent did not run"
+    assert agent_output.read_text() == prompt_text
+
+
+def test_add_with_agent_flag_overrides_default(
+    isolated_tmux_server: TmuxEnvironment, workmux_exe_path: Path, repo_path: Path
+):
+    """The --agent flag should override the default agent and inject prompts correctly."""
+    env = isolated_tmux_server
+    branch_name = "feature-agent-override"
+    prompt_text = "This is for the override agent"
+    output_filename = "agent_output.txt"
+
+    # Create two fake agents: a default one and the one we'll specify via the flag.
+    # Default agent (claude)
+    install_fake_agent(
+        env,
+        "claude",
+        "#!/bin/sh\necho 'default agent ran' > default_agent.txt",
+    )
+
+    # Override agent (gemini)
+    install_fake_agent(
+        env,
+        "gemini",
+        f"""#!/bin/sh
+# Gemini gets a -i flag
+printf '%s' "$2" > "{output_filename}"
+""",
+    )
+
+    # Configure workmux to use <agent> placeholder. The default should be 'claude'.
+    write_workmux_config(repo_path, panes=[{"command": "<agent>"}])
+
+    # Run 'add' with the --agent flag to override the default
+    run_workmux_command(
+        env,
+        workmux_exe_path,
+        repo_path,
+        f"add {branch_name} --agent gemini --prompt '{prompt_text}'",
+    )
+
+    worktree_path = get_worktree_path(repo_path, branch_name)
+    agent_output = worktree_path / output_filename
+    default_agent_output = worktree_path / "default_agent.txt"
+
+    def override_agent_ran():
+        return agent_output.exists()
+
+    assert poll_until(override_agent_ran, timeout=2.0), "Override agent did not run"
+    assert not default_agent_output.exists(), "Default agent should not have run"
+    assert agent_output.read_text() == prompt_text
 
 
 def test_add_executes_post_create_hooks(

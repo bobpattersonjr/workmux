@@ -381,6 +381,7 @@ fn setup_environment(
         worktree_path,
         options.run_pane_commands,
         options.prompt_file_path.as_deref(),
+        config,
     )
     .context("Failed to setup panes")?;
     debug!(

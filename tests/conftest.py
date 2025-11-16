@@ -228,15 +228,20 @@ def write_workmux_config(
     files: Optional[Dict[str, List[str]]] = None,
     env: Optional[TmuxEnvironment] = None,
     window_prefix: Optional[str] = None,
+    agent: Optional[str] = None,
 ):
     """Creates a .workmux.yaml file from structured data and optionally commits it."""
-    config: Dict[str, Any] = {"panes": panes if panes is not None else []}
+    config: Dict[str, Any] = {}
+    if panes is not None:
+        config["panes"] = panes
     if post_create:
         config["post_create"] = post_create
     if files:
         config["files"] = files
     if window_prefix:
         config["window_prefix"] = window_prefix
+    if agent:
+        config["agent"] = agent
     (repo_path / ".workmux.yaml").write_text(yaml.dump(config))
 
     # If env is provided, commit the config file to avoid uncommitted changes in merge tests

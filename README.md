@@ -145,7 +145,8 @@ panes:
 - `panes`: Array of pane configurations
   - `command`: Optional command to run when the pane is created. Use this for
     long-running setup like dependency installs so output is visible in tmux.
-    If omitted, the pane starts with your default shell.
+    If omitted, the pane starts with your default shell. Use `<agent>` to use
+    the configured agent.
   - `focus`: Whether this pane should receive focus (default: false)
   - `split`: How to split from previous pane (`horizontal` or `vertical`)
 - `post_create`: Commands to run after worktree creation but before the tmux
@@ -154,14 +155,18 @@ panes:
 - `files`: File operations to perform on worktree creation
   - `copy`: List of glob patterns for files/directories to copy
   - `symlink`: List of glob patterns for files/directories to symlink
+- `agent`: The default agent command to use for `<agent>` in pane commands
+  (e.g., `claude`, `gemini`). This can be overridden by the `--agent` flag.
+  Default: `claude`.
 
 #### Default behavior
 
 - Worktrees are created in `<project>__worktrees` as a sibling directory to your
   project by default
-- If no `panes` configuration is defined, workmux provides sensible defaults:
-  - For projects with a `CLAUDE.md` file: Opens `claude` in the first pane
-  - For all other projects: Opens your default shell
+- If no `panes` configuration is defined, workmux provides opinionated defaults:
+  - For projects with a `CLAUDE.md` file: Opens the configured agent (see
+    `agent` option) in the first pane, defaulting to `claude` if none is set.
+  - For all other projects: Opens your default shell.
   - Both configurations include a second pane split horizontally
 - `post_create` commands are optional and only run if you configure them
 
@@ -236,6 +241,7 @@ immediately. If the branch doesn't exist, it will be created automatically.
 - `-P, --prompt-file <path>`: Provide a path to a file whose contents will be used as the
   prompt.
 - `-e, --prompt-editor`: Open your `$EDITOR` (or `$VISUAL`) to write the prompt interactively.
+- `--agent <name>`: Override the default agent for this worktree (e.g., `gemini`).
 
 Note: The prompt options are mutually exclusive - you can only use one at a time.
 
@@ -283,6 +289,9 @@ workmux add origin/feature/foo
 # Create a worktree with an inline prompt for AI agents
 workmux add feature/ai --prompt "Implement user authentication with OAuth"
 
+# Override the default agent for a specific worktree
+workmux add feature/testing --agent gemini
+
 # Create a worktree with a prompt from a file
 workmux add feature/refactor --prompt-file task-description.md
 
@@ -298,13 +307,16 @@ workmux add quick-fix --no-file-ops
 
 #### AI agent integration
 
-When you provide a prompt via `--prompt`, `--prompt-file`, or `--prompt-editor`, workmux automatically
-injects the prompt into panes running AI agent commands (`claude`, `codex`, `gemini`)
-without requiring any `.workmux.yaml` changes:
+When you provide a prompt via `--prompt`, `--prompt-file`, or
+`--prompt-editor`, workmux automatically injects the prompt into panes running
+the configured agent command (e.g., `claude`, `gemini`, or whatever you've set
+via the `agent` config or `--agent` flag) without requiring any `.workmux.yaml`
+changes:
 
-- Panes with known AI agents are automatically started with the given prompt
-- You can keep your `.workmux.yaml` pane configuration simple (e.g.,
-  `panes: [{ command: "claude" }]`) and let workmux handle prompt injection at runtime
+- Panes with a command matching the configured agent are automatically started
+  with the given prompt.
+- You can keep your `.workmux.yaml` pane configuration simple (e.g., `panes: [{
+command: "<agent>" }]`) and let workmux handle prompt injection at runtime.
 
 This means you can launch AI agents with task-specific prompts without modifying your
 project configuration for each task.
@@ -496,10 +508,10 @@ workmux open user-auth --force-files
 
 ### `workmux claude prune`
 
-Removes stale entries from `~/.claude.json` that point to deleted worktree
-directories. When you run Claude Code in worktrees, it stores configuration in
-`~/.claude.json`. Over time, as worktrees are merged or removed, this file can
-accumulate entries for paths that no longer exist.
+Removes stale entries from Claude config (`~/.claude.json`) that point to
+deleted worktree directories. When you run Claude Code in worktrees, it stores
+per-worktree settings in that file. Over time, as worktrees are merged or
+deleted, it can accumulate entries for paths that no longer exist.
 
 #### What happens
 
